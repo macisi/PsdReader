@@ -5,63 +5,103 @@ define(['psd.parser', 'template'], function(PSD, tpl){
     var doc = document;
 
     /**
+     * layer constructor
+     * @constructor
+     */
+    function Layer(layerEl, data){
+        this.data = data;
+        this.init(layerEl);
+        console.log(data)
+    }
+
+    Layer.prototype = {
+        constructor: Layer,
+        init: function(layerEl){
+            this.canvas = doc.createElement("canvas");
+            this.ctx = this.canvas.getContext("2d");
+            this.canvas.width = this.data.header.columns;
+            this.canvas.height = this.data.header.rows;
+            this.el = layerEl;
+            //set global alpha
+            this.ctx.globalAlpha = this.data.record.opacity / 255;
+
+            this.el.addEventListener("change", this.toggle.bind(this), false);
+        },
+        render: function(){
+            var excanvas = doc.createElement("canvas"),
+                exctx = excanvas.getContext("2d"),
+                record = this.data.record,
+                layer = this.data.channelData,
+                width = record.right - record.left,
+                height = record.bottom - record.top,
+                imageData;
+
+            if (width === 0 || height === 0) return;
+
+            excanvas.width = width;
+            excanvas.height = height;
+            imageData = this.ctx.createImageData(width, height);
+
+            for(var i = 0, len = imageData.data.length; i < len; i += 4) {
+                imageData.data[i] = layer.channel[1].channel[i / 4];
+                imageData.data[i + 1] = layer.channel[2].channel[i / 4];
+                imageData.data[i + 2] = layer.channel[3].channel[i / 4];
+                imageData.data[i + 3] = layer.channel[0].channel[i / 4];
+            }
+            exctx.putImageData(imageData, 0, 0);
+            this.ctx.drawImage(excanvas, record.left, record.top);
+        },
+        toggle: function(e){
+            this.canvas.style.display = e.target.checked ? "": "none";
+        }
+    };
+
+    /**
      * layer list
      */
-    var layer = {
+    var layerList = {
         el: doc.getElementById("layer"),
         templates: tpl.layerList,
-        render: function(layerAndMaskInformation){
-            this.el.innerHTML = this.templates(layerAndMaskInformation.layerInfo);
+        render: function(parser){
+            var frag = "";
+            parser.layerAndMaskInformation.layerInfo.layerRecord.forEach(function(record, index){
+                if (record.flags !== 24) {
+                    // 8 is normal layer, 24 is a group, here just ignore when group
+                    frag += this.templates({
+                        record: record,
+                        index: index
+                    });
+                }
+            }.bind(this));
+            this.el.innerHTML = frag;
+
+            //initialize Layer
+            Array.prototype.forEach.call(this.el.querySelectorAll("li"), function(li){
+                var id = + li.dataset.id;
+                preview.push(new Layer(li, {
+                    header: parser.header,
+                    channelData: parser.layerAndMaskInformation.layerInfo.channelImageData[id],
+                    record: parser.layerAndMaskInformation.layerInfo.layerRecord[id]
+                }));
+            });
         }
     };
 
     /**
      * preview the psd on the canvas
      */
-    var preview = (function(){
-        var el = doc.getElementById("preview");
-        var ctx = el.getContext("2d");
+    var preview = {
+        el: doc.getElementById("preview"),
+        layers: [],
+        init: function(){
 
-        return {
-            el: el,
-            ctx: ctx,
-            /**
-             * put data to canvas
-             * @param image
-             */
-            render: function(image){
-                var imageData = this.ctx.createImageData(454, 340);
-                for(var i = 0, len = imageData.data.length; i < len; i += 4) {
-                    imageData.data[i] = image.channel[0][i / 4];
-                    imageData.data[i + 1] = image.channel[1][i / 4];
-                    imageData.data[i + 2] = image.channel[2][i / 4];
-                    imageData.data[i + 3] = image.channel[3][i / 4];
-                }
-                this.ctx.putImageData(imageData, 0, 0);
-            },
-            renderLayer: function(layerInfo){
-                var record, imageData, excanvas = doc.createElement("canvas"), exctx = excanvas.getContext("2d");
-
-                layerInfo.channelImageData.forEach(function(layer, index){
-                    record = layerInfo.layerRecord[index];
-                    console.log(record, layer);
-
-                    excanvas.width = record.right - record.left;
-                    excanvas.height = record.bottom - record.top;
-                    imageData = this.ctx.createImageData(record.right - record.left, record.bottom - record.top);
-                    for(var i = 0, len = imageData.data.length; i < len; i += 4) {
-                        imageData.data[i] = layer.channel[1].channel[i / 4];
-                        imageData.data[i + 1] = layer.channel[2].channel[i / 4];
-                        imageData.data[i + 2] = layer.channel[3].channel[i / 4];
-                        imageData.data[i + 3] = layer.channel[0].channel[i / 4];
-                    }
-                    exctx.putImageData(imageData, 0, 0);
-                    this.ctx.drawImage(excanvas, record.left, record.top);
-                }.bind(this));
-
-            }
+        },
+        push: function(layer){
+            layer.render();
+            this.layers.push(layer);
+            this.el.appendChild(layer.canvas);
         }
-    }());
+    };
 
     var app = {
         el: doc.getElementById("file"),
@@ -80,12 +120,10 @@ define(['psd.parser', 'template'], function(PSD, tpl){
                 var parser = new PSD.Parser(e.target.result);
                 parser.parse();
                 console.log(parser);
-//                preview.render(parser.imageData.image);
-                preview.renderLayer(parser.layerAndMaskInformation.layerInfo);
-                layer.render(parser.layerAndMaskInformation);
+                layerList.render(parser);
             };
 
-            //start read as array buffer
+            //start read psd file
             reader.readAsArrayBuffer(file);
         }
     };
