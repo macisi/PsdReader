@@ -7,7 +7,7 @@ var require = {
         'app': 'app',
         'lib': 'lib',
         'handlebars': 'lib/handlebars-v1.3.0',
-        'psd.parser': 'lib/psd.parser.min',
+        'psd.parser': 'lib/psd',
         'templates': 'templates',
         'template': 'templates/template',
         'text': 'lib/require/text'
